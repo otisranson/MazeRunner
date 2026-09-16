@@ -30,6 +30,9 @@
   }
   input[type="color"]:disabled { opacity: 0.4; cursor: not-allowed; }
   #stats { margin-left: auto; font-size: 12px; color: #999; }
+  #intensityLabel { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; }
+  #intensityLabel input[type="range"] { accent-color: #3a6; cursor: pointer; }
+  #intensityValue { min-width: 88px; }
   #help { font-size: 12px; color: #888; padding: 4px 14px 0; }
   #viewWrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; }
   canvas#view { image-rendering: pixelated; background: #000; }
@@ -67,6 +70,10 @@
       <option value="nonagon">Nonagon</option>
       <option value="decagon">Decagon</option>
     </select>
+    <label id="intensityLabel">Intensity
+      <input type="range" id="intensityInput" min="1" max="10" value="5" step="1">
+      <span id="intensityValue">5 · Moderate</span>
+    </label>
     <button id="newMazeBtn">New Maze</button>
     <button id="solveBtn">Show Solution</button>
     <button id="resetBtn">Reset Position</button>
@@ -186,6 +193,47 @@ function generateCells(cols, rows, active, seed) {
   return cells;
 }
 
+// intensity is exposed as braid probability: a "perfect maze" (pure spanning tree, no
+// cycles) forces exactly one route between any two cells and maximizes dead ends — the
+// hardest case. Braiding knocks down a wall at some fraction of dead ends, injecting a
+// cycle (a percolation-style edge back into the tree) so a wrong turn has a shortcut back
+// out, which is what actually makes a maze feel easier rather than just "smaller."
+function braidMaze(cells, cols, rows, active, braidChance) {
+  if (braidChance <= 0) return;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!active[y][x]) continue;
+      const c = cells[y][x];
+      if (["N", "S", "E", "W"].filter(d => !c[d]).length !== 1) continue;
+      if (Math.random() > braidChance) continue;
+
+      const walledNeighbors = [
+        { dir: "N", opp: "S", x, y: y - 1 },
+        { dir: "S", opp: "N", x, y: y + 1 },
+        { dir: "E", opp: "W", x: x + 1, y },
+        { dir: "W", opp: "E", x: x - 1, y },
+      ].filter(n => c[n.dir] && n.x >= 0 && n.x < cols && n.y >= 0 && n.y < rows && active[n.y][n.x]);
+      if (!walledNeighbors.length) continue;
+
+      const pick = walledNeighbors[Math.floor(Math.random() * walledNeighbors.length)];
+      c[pick.dir] = false;
+      cells[pick.y][pick.x][pick.opp] = false;
+    }
+  }
+}
+
+function countDeadEnds(cells, cols, rows, active) {
+  let n = 0;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!active[y][x]) continue;
+      const c = cells[y][x];
+      if (["N", "S", "E", "W"].filter(d => !c[d]).length === 1) n++;
+    }
+  }
+  return n;
+}
+
 // doubled-resolution wall grid so the raycaster can treat the maze like any tile map;
 // cells outside the active shape are left as solid walls, which is what carves the outline
 function buildTileGrid(cells, cols, rows, active) {
@@ -258,6 +306,10 @@ let activeMask, startCell, exitCell;
 let player = { x: 0, y: 0, angle: 0 };
 let showSolution = false;
 let mazeStartTime = 0, won = false;
+let deadEndCount = 0;
+const MAX_BRAID = 0.75;
+const braidChanceForIntensity = (intensity) => MAX_BRAID * (10 - intensity) / 9;
+const INTENSITY_LABELS = { 1: "Open", 2: "Easy", 3: "Easy", 4: "Moderate", 5: "Moderate", 6: "Tricky", 7: "Tricky", 8: "Hard", 9: "Hard", 10: "Labyrinthine" };
 let wallColor = hexToRgb("#4a78c8");
 let psychedelic = false;
 let asciiMode = false;
@@ -306,6 +358,10 @@ function newMaze() {
   exitCell = exit;
 
   cells = generateCells(cols, rows, active, start);
+  const intensity = parseInt(document.getElementById("intensityInput").value, 10);
+  braidMaze(cells, cols, rows, active, braidChanceForIntensity(intensity));
+  deadEndCount = countDeadEnds(cells, cols, rows, active);
+
   ({ grid: tileGrid, w: gridW, h: gridH } = buildTileGrid(cells, cols, rows, active));
   solutionPath = solvePath(cells, cols, start, exit);
 
@@ -462,7 +518,7 @@ function render() {
   }
 
   renderMinimap();
-  statsEl.textContent = `${cols}x${rows} maze`;
+  statsEl.textContent = `${cols}x${rows} maze · ${deadEndCount} dead ends`;
 }
 
 function renderMinimap() {
@@ -532,6 +588,10 @@ document.getElementById("asciiBtn").addEventListener("click", (e) => {
   asciiMode = !asciiMode;
   e.target.classList.toggle("active", asciiMode);
 });
+document.getElementById("intensityInput").addEventListener("input", (e) => {
+  document.getElementById("intensityValue").textContent = `${e.target.value} · ${INTENSITY_LABELS[e.target.value]}`;
+});
+document.getElementById("intensityInput").addEventListener("change", newMaze);
 
 let lastTime = performance.now();
 function loop(now) {

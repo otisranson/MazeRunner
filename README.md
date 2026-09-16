@@ -12,6 +12,12 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
 - **Generator**: recursive-backtracker algorithm, four size presets
 - **Shape**: Square, Circle, Triangle, or a regular Pentagon through Decagon — the maze is carved
   to fit any of them, with entrance/exit placed at opposite corners of the shape
+- **Intensity** (1–10): a difficulty slider independent of size. A recursive-backtracker maze
+  is a spanning tree — exactly one route between any two cells, maximizing dead ends. Lower
+  intensity "braids" that tree, knocking down walls at some fraction of dead ends to punch
+  shortcuts back into the path (a lower-intensity maze has fewer, more forgiving dead ends;
+  intensity 10 is the unbraided perfect maze — one forced path, no shortcuts). The stats bar
+  shows the live dead-end count as a rough difficulty readout
 - **Solver**: BFS shortest path, shown as an overlay on the minimap via "Show Solution"
 - **Wall color**: pick any color for the walls, or toggle **Psychedelic Mode** for animated,
   flowing rainbow walls (overlapping sine waves in the wall's hit coordinates + time, so the
