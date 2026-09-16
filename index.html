@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>MazeRunner</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #111; color: #eee;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  #toolbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; background: #1b1b1f; border-bottom: 1px solid #333;
+    flex-wrap: wrap;
+  }
+  #toolbar h1 { font-size: 16px; margin: 0 16px 0 0; font-weight: 600; letter-spacing: 0.5px; }
+  select, button {
+    background: #2a2a30; color: #eee; border: 1px solid #444;
+    border-radius: 4px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  }
+  button:hover, select:hover { background: #35353d; }
+  button.active { background: #3a6; border-color: #3a6; color: #051; }
+  #stats { margin-left: auto; font-size: 12px; color: #999; }
+  #help { font-size: 12px; color: #888; padding: 4px 14px 0; }
+  #viewWrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; }
+  canvas#view { image-rendering: pixelated; background: #000; }
+  canvas#minimap {
+    position: absolute; top: 14px; right: 14px;
+    background: rgba(10,10,14,0.75); border: 1px solid #444; border-radius: 4px;
+  }
+  #winOverlay {
+    position: absolute; inset: 0; display: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(0,0,0,0.75); gap: 14px;
+  }
+  #winOverlay h2 { font-size: 28px; margin: 0; color: #6f6; }
+  #winOverlay p { margin: 0; color: #ccc; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <h1>MazeRunner</h1>
+    <select id="sizeSelect">
+      <option value="10">Small (10x10)</option>
+      <option value="18" selected>Medium (18x18)</option>
+      <option value="26">Large (26x26)</option>
+      <option value="36">Huge (36x36)</option>
+    </select>
+    <button id="newMazeBtn">New Maze</button>
+    <button id="solveBtn">Show Solution</button>
+    <button id="resetBtn">Reset Position</button>
+    <div id="stats"></div>
+  </div>
+  <div id="help">Move: W/S or &uarr;/&darr; &nbsp; Turn: A/D or &larr;/&rarr; &nbsp; Strafe: Q/E</div>
+  <div id="viewWrap">
+    <canvas id="view" width="900" height="560"></canvas>
+    <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="winOverlay">
+      <h2>You solved the maze!</h2>
+      <p id="winStats"></p>
+      <button id="againBtn">Generate New Maze</button>
+    </div>
+  </div>
+</div>
+<script>
+"use strict";
+
+// ---------- maze generation (recursive backtracker) ----------
+
+function generateCells(cols, rows) {
+  const cells = [];
+  for (let y = 0; y < rows; y++) {
+    const row = [];
+    for (let x = 0; x < cols; x++) {
+      row.push({ N: true, S: true, E: true, W: true, visited: false });
+    }
+    cells.push(row);
+  }
+
+  const inBounds = (x, y) => x >= 0 && x < cols && y >= 0 && y < rows;
+  const neighborsOf = (x, y) => ([
+    { dir: "N", opp: "S", x, y: y - 1 },
+    { dir: "S", opp: "N", x, y: y + 1 },
+    { dir: "E", opp: "W", x: x + 1, y },
+    { dir: "W", opp: "E", x: x - 1, y },
+  ]).filter(n => inBounds(n.x, n.y) && !cells[n.y][n.x].visited);
+
+  const stack = [{ x: 0, y: 0 }];
+  cells[0][0].visited = true;
+  while (stack.length) {
+    const { x, y } = stack[stack.length - 1];
+    const options = neighborsOf(x, y);
+    if (!options.length) { stack.pop(); continue; }
+    const pick = options[Math.floor(Math.random() * options.length)];
+    cells[y][x][pick.dir] = false;
+    cells[pick.y][pick.x][pick.opp] = false;
+    cells[pick.y][pick.x].visited = true;
+    stack.push({ x: pick.x, y: pick.y });
+  }
+  return cells;
+}
+
+// doubled-resolution wall grid so the raycaster can treat the maze like any tile map
+function buildTileGrid(cells, cols, rows) {
+  const w = cols * 2 + 1, h = rows * 2 + 1;
+  const grid = Array.from({ length: h }, () => new Array(w).fill(1));
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const c = cells[y][x];
+      const tx = x * 2 + 1, ty = y * 2 + 1;
+      grid[ty][tx] = 0;
+      if (!c.E) grid[ty][tx + 1] = 0;
+      if (!c.S) grid[ty + 1][tx] = 0;
+    }
+  }
+  return { grid, w, h };
+}
+
+function solveCells(cells, cols, rows) {
+  const start = { x: 0, y: 0 }, goal = { x: cols - 1, y: rows - 1 };
+  const key = (x, y) => y * cols + x;
+  const prev = new Map();
+  const seen = new Set([key(start.x, start.y)]);
+  const queue = [start];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur.x === goal.x && cur.y === goal.y) break;
+    const c = cells[cur.y][cur.x];
+    const steps = [];
+    if (!c.N) steps.push({ x: cur.x, y: cur.y - 1 });
+    if (!c.S) steps.push({ x: cur.x, y: cur.y + 1 });
+    if (!c.E) steps.push({ x: cur.x + 1, y: cur.y });
+    if (!c.W) steps.push({ x: cur.x - 1, y: cur.y });
+    for (const n of steps) {
+      const k = key(n.x, n.y);
+      if (!seen.has(k)) { seen.add(k); prev.set(k, cur); queue.push(n); }
+    }
+  }
+  const path = [goal];
+  let cur = goal;
+  while (!(cur.x === start.x && cur.y === start.y)) {
+    cur = prev.get(key(cur.x, cur.y));
+    if (!cur) return [];
+    path.push(cur);
+  }
+  return path.reverse();
+}
+
+// ---------- state ----------
+
+let cols, rows, cells, tileGrid, gridW, gridH, solutionPath;
+let player = { x: 0, y: 0, angle: 0 };
+let showSolution = false;
+let mazeStartTime = 0, won = false;
+
+const viewCanvas = document.getElementById("view");
+const viewCtx = viewCanvas.getContext("2d");
+const mmCanvas = document.getElementById("minimap");
+const mmCtx = mmCanvas.getContext("2d");
+const statsEl = document.getElementById("stats");
+const winOverlay = document.getElementById("winOverlay");
+const winStats = document.getElementById("winStats");
+
+function newMaze() {
+  cols = rows = parseInt(document.getElementById("sizeSelect").value, 10);
+  cells = generateCells(cols, rows);
+  ({ grid: tileGrid, w: gridW, h: gridH } = buildTileGrid(cells, cols, rows));
+  solutionPath = solveCells(cells, cols, rows);
+  showSolution = false;
+  document.getElementById("solveBtn").classList.remove("active");
+  resetPlayer();
+  won = false;
+  winOverlay.style.display = "none";
+  mazeStartTime = performance.now();
+}
+
+function resetPlayer() {
+  player.x = 1.5;
+  player.y = 1.5;
+  player.angle = 0;
+}
+
+// ---------- raycasting ----------
+
+const FOV = Math.PI / 3;
+const MOVE_SPEED = 2.4;
+const TURN_SPEED = 2.2;
+const keys = {};
+
+function isWall(tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= gridW || ty >= gridH) return true;
+  return tileGrid[ty][tx] === 1;
+}
+
+function tryMove(nx, ny) {
+  const r = 0.2;
+  if (!isWall(Math.floor(nx + r), Math.floor(player.y + r)) &&
+      !isWall(Math.floor(nx + r), Math.floor(player.y - r)) &&
+      !isWall(Math.floor(nx - r), Math.floor(player.y + r)) &&
+      !isWall(Math.floor(nx - r), Math.floor(player.y - r))) {
+    player.x = nx;
+  }
+  if (!isWall(Math.floor(player.x + r), Math.floor(ny + r)) &&
+      !isWall(Math.floor(player.x + r), Math.floor(ny - r)) &&
+      !isWall(Math.floor(player.x - r), Math.floor(ny + r)) &&
+      !isWall(Math.floor(player.x - r), Math.floor(ny - r))) {
+    player.y = ny;
+  }
+}
+
+function update(dt) {
+  if (won) return;
+  let fwd = 0, strafe = 0;
+  if (keys["w"] || keys["arrowup"]) fwd += 1;
+  if (keys["s"] || keys["arrowdown"]) fwd -= 1;
+  if (keys["e"]) strafe += 1;
+  if (keys["q"]) strafe -= 1;
+  if (keys["a"] || keys["arrowleft"]) player.angle -= TURN_SPEED * dt;
+  if (keys["d"] || keys["arrowright"]) player.angle += TURN_SPEED * dt;
+
+  if (fwd !== 0 || strafe !== 0) {
+    const dx = Math.cos(player.angle) * fwd + Math.cos(player.angle + Math.PI / 2) * strafe;
+    const dy = Math.sin(player.angle) * fwd + Math.sin(player.angle + Math.PI / 2) * strafe;
+    const len = Math.hypot(dx, dy) || 1;
+    tryMove(player.x + (dx / len) * MOVE_SPEED * dt, player.y + (dy / len) * MOVE_SPEED * dt);
+  }
+
+  const cellX = Math.floor((player.x - 1) / 2), cellY = Math.floor((player.y - 1) / 2);
+  if (cellX === cols - 1 && cellY === rows - 1) {
+    won = true;
+    const secs = ((performance.now() - mazeStartTime) / 1000).toFixed(1);
+    winStats.textContent = `Time: ${secs}s`;
+    winOverlay.style.display = "flex";
+  }
+}
+
+function castRay(angle) {
+  const rayDirX = Math.cos(angle), rayDirY = Math.sin(angle);
+  let mapX = Math.floor(player.x), mapY = Math.floor(player.y);
+  const deltaDistX = rayDirX === 0 ? 1e30 : Math.abs(1 / rayDirX);
+  const deltaDistY = rayDirY === 0 ? 1e30 : Math.abs(1 / rayDirY);
+
+  let stepX, sideDistX, stepY, sideDistY;
+  if (rayDirX < 0) { stepX = -1; sideDistX = (player.x - mapX) * deltaDistX; }
+  else { stepX = 1; sideDistX = (mapX + 1 - player.x) * deltaDistX; }
+  if (rayDirY < 0) { stepY = -1; sideDistY = (player.y - mapY) * deltaDistY; }
+  else { stepY = 1; sideDistY = (mapY + 1 - player.y) * deltaDistY; }
+
+  let side = 0;
+  for (let i = 0; i < 256; i++) {
+    if (sideDistX < sideDistY) { sideDistX += deltaDistX; mapX += stepX; side = 0; }
+    else { sideDistY += deltaDistY; mapY += stepY; side = 1; }
+    if (isWall(mapX, mapY)) break;
+  }
+
+  const perpDist = side === 0
+    ? (mapX - player.x + (1 - stepX) / 2) / rayDirX
+    : (mapY - player.y + (1 - stepY) / 2) / rayDirY;
+  return { dist: Math.max(perpDist, 0.0001), side };
+}
+
+function render() {
+  const w = viewCanvas.width, h = viewCanvas.height;
+  viewCtx.fillStyle = "#1c1e24";
+  viewCtx.fillRect(0, 0, w, h / 2);
+  viewCtx.fillStyle = "#08090b";
+  viewCtx.fillRect(0, h / 2, w, h / 2);
+
+  const numRays = w;
+  for (let i = 0; i < numRays; i++) {
+    const rayAngle = player.angle - FOV / 2 + (i / numRays) * FOV;
+    const { dist, side } = castRay(rayAngle);
+    const corrected = dist * Math.cos(rayAngle - player.angle);
+    const lineHeight = Math.min(h * 2, h / corrected);
+    const y0 = (h - lineHeight) / 2;
+
+    const shade = Math.max(0.15, 1 - corrected / 14);
+    const base = side === 1 ? [70, 120, 200] : [100, 150, 235];
+    viewCtx.fillStyle = `rgb(${base[0] * shade | 0},${base[1] * shade | 0},${base[2] * shade | 0})`;
+    viewCtx.fillRect(i, y0, 1, lineHeight);
+  }
+
+  renderMinimap();
+  statsEl.textContent = `${cols}x${rows} maze`;
+}
+
+function renderMinimap() {
+  const w = mmCanvas.width, h = mmCanvas.height;
+  mmCtx.clearRect(0, 0, w, h);
+  const scale = Math.min(w / gridW, h / gridH);
+  const ox = (w - gridW * scale) / 2, oy = (h - gridH * scale) / 2;
+
+  for (let y = 0; y < gridH; y++) {
+    for (let x = 0; x < gridW; x++) {
+      if (tileGrid[y][x] === 1) {
+        mmCtx.fillStyle = "#556";
+        mmCtx.fillRect(ox + x * scale, oy + y * scale, scale + 0.5, scale + 0.5);
+      }
+    }
+  }
+
+  if (showSolution) {
+    mmCtx.fillStyle = "#e6c94d";
+    for (const c of solutionPath) {
+      const tx = c.x * 2 + 1, ty = c.y * 2 + 1;
+      mmCtx.fillRect(ox + tx * scale, oy + ty * scale, scale + 0.5, scale + 0.5);
+    }
+  }
+
+  mmCtx.fillStyle = "#4caf50";
+  mmCtx.fillRect(ox + 1 * scale, oy + 1 * scale, scale + 0.5, scale + 0.5);
+  mmCtx.fillStyle = "#e33";
+  mmCtx.fillRect(ox + (2 * (cols - 1) + 1) * scale, oy + (2 * (rows - 1) + 1) * scale, scale + 0.5, scale + 0.5);
+
+  mmCtx.save();
+  mmCtx.translate(ox + player.x * scale, oy + player.y * scale);
+  mmCtx.rotate(player.angle);
+  mmCtx.fillStyle = "#7cf";
+  mmCtx.beginPath();
+  mmCtx.moveTo(6, 0);
+  mmCtx.lineTo(-4, 4);
+  mmCtx.lineTo(-4, -4);
+  mmCtx.closePath();
+  mmCtx.fill();
+  mmCtx.restore();
+}
+
+// ---------- input & loop ----------
+
+window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
+
+document.getElementById("newMazeBtn").addEventListener("click", newMaze);
+document.getElementById("resetBtn").addEventListener("click", resetPlayer);
+document.getElementById("againBtn").addEventListener("click", newMaze);
+document.getElementById("sizeSelect").addEventListener("change", newMaze);
+document.getElementById("solveBtn").addEventListener("click", (e) => {
+  showSolution = !showSolution;
+  e.target.classList.toggle("active", showSolution);
+});
+
+let lastTime = performance.now();
+function loop(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.1);
+  lastTime = now;
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+
+newMaze();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
