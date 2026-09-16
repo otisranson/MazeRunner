@@ -13,6 +13,9 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
 - **Shape**: Square, Circle, Triangle, or a regular Pentagon through Decagon — the maze is carved
   to fit any of them, with entrance/exit placed at opposite corners of the shape
 - **Solver**: BFS shortest path, shown as an overlay on the minimap via "Show Solution"
+- **Wall color**: pick any color for the walls, or toggle **Psychedelic Mode** for animated,
+  flowing rainbow walls (overlapping sine waves in the wall's hit coordinates + time, so the
+  color moves like fluid across the surface rather than just flashing)
 - **First-person view**: a Wolfenstein-style DDA raycaster rendered on `<canvas>`
   - Move: `W`/`S` or `↑`/`↓`
   - Turn: `A`/`D` or `←`/`→`
