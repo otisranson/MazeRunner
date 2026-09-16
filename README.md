@@ -18,6 +18,10 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
   shortcuts back into the path (a lower-intensity maze has fewer, more forgiving dead ends;
   intensity 10 is the unbraided perfect maze — one forced path, no shortcuts). The stats bar
   shows the live dead-end count as a rough difficulty readout
+- **Apply Settings**: Size, Shape, and Intensity changes don't regenerate the maze right away —
+  adjust as many as you like, then hit **Apply Settings** (which lights up amber as a reminder
+  something's pending) to commit them all at once. **New Maze** re-rolls immediately using
+  whatever's currently applied
 - **Solver**: BFS shortest path, shown as an overlay on the minimap via "Show Solution"
 - **Wall color**: pick any color for the walls, or toggle **Psychedelic Mode** for animated,
   flowing rainbow walls (overlapping sine waves in the wall's hit coordinates + time, so the

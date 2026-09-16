@@ -24,6 +24,7 @@
   }
   button:hover, select:hover { background: #35353d; }
   button.active { background: #3a6; border-color: #3a6; color: #051; }
+  button.pending { background: #b87333; border-color: #b87333; color: #fff; }
   input[type="color"] {
     width: 38px; height: 30px; padding: 2px; background: #2a2a30;
     border: 1px solid #444; border-radius: 4px; cursor: pointer;
@@ -74,6 +75,7 @@
       <input type="range" id="intensityInput" min="1" max="10" value="5" step="1">
       <span id="intensityValue">5 · Moderate</span>
     </label>
+    <button id="applyBtn">Apply Settings</button>
     <button id="newMazeBtn">New Maze</button>
     <button id="solveBtn">Show Solution</button>
     <button id="resetBtn">Reset Position</button>
@@ -367,6 +369,7 @@ function newMaze() {
 
   showSolution = false;
   document.getElementById("solveBtn").classList.remove("active");
+  document.getElementById("applyBtn").classList.remove("pending");
   resetPlayer();
   won = false;
   winOverlay.style.display = "none";
@@ -567,11 +570,14 @@ function renderMinimap() {
 window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
+const markSettingsPending = () => document.getElementById("applyBtn").classList.add("pending");
+
+document.getElementById("applyBtn").addEventListener("click", newMaze);
 document.getElementById("newMazeBtn").addEventListener("click", newMaze);
 document.getElementById("resetBtn").addEventListener("click", resetPlayer);
 document.getElementById("againBtn").addEventListener("click", newMaze);
-document.getElementById("sizeSelect").addEventListener("change", newMaze);
-document.getElementById("shapeSelect").addEventListener("change", newMaze);
+document.getElementById("sizeSelect").addEventListener("change", markSettingsPending);
+document.getElementById("shapeSelect").addEventListener("change", markSettingsPending);
 document.getElementById("solveBtn").addEventListener("click", (e) => {
   showSolution = !showSolution;
   e.target.classList.toggle("active", showSolution);
@@ -590,8 +596,8 @@ document.getElementById("asciiBtn").addEventListener("click", (e) => {
 });
 document.getElementById("intensityInput").addEventListener("input", (e) => {
   document.getElementById("intensityValue").textContent = `${e.target.value} · ${INTENSITY_LABELS[e.target.value]}`;
+  markSettingsPending();
 });
-document.getElementById("intensityInput").addEventListener("change", newMaze);
 
 let lastTime = performance.now();
 function loop(now) {
