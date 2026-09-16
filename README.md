@@ -35,3 +35,7 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
   - Strafe: `Q`/`E`
 - Minimap inset shows the full maze, your position/heading, start (green) and exit (red)
 - Reaching the exit shows a win banner with elapsed time
+- **Mobile friendly**: on a touchscreen, an on-screen D-pad (move/turn) appears bottom-left and
+  the raycast view/minimap resize to fill the actual screen instead of a fixed desktop size; the
+  toolbar becomes a single scrollable row with larger tap targets so every option (size, shape,
+  intensity, color, mode toggles) stays reachable on a small screen

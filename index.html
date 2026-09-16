@@ -2,14 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#111111">
 <title>MazeRunner</title>
 <style>
   :root { color-scheme: dark; }
   html, body {
-    margin: 0; padding: 0; height: 100%;
+    margin: 0; padding: 0; height: 100%; height: 100dvh;
     background: #111; color: #eee;
     font-family: system-ui, sans-serif;
     overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
   }
   #app { display: flex; flex-direction: column; height: 100%; }
   #toolbar {
@@ -34,8 +38,16 @@
   #intensityLabel { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; }
   #intensityLabel input[type="range"] { accent-color: #3a6; cursor: pointer; }
   #intensityValue { min-width: 88px; }
-  #help { font-size: 12px; color: #888; padding: 4px 14px 0; }
-  #viewWrap { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; background: #000; }
+  #help, #helpTouch { font-size: 12px; color: #888; padding: 4px 14px 0; }
+  .help-touch { display: none; }
+  @media (pointer: coarse) {
+    .help-desktop { display: none; }
+    .help-touch { display: block; }
+  }
+  #viewWrap {
+    position: relative; flex: 1; min-height: 0; min-width: 0; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; background: #000;
+  }
   canvas#view { image-rendering: pixelated; background: #000; }
   canvas#minimap {
     position: absolute; top: 14px; right: 14px;
@@ -48,6 +60,37 @@
   }
   #winOverlay h2 { font-size: 28px; margin: 0; color: #6f6; }
   #winOverlay p { margin: 0; color: #ccc; }
+
+  #dpad { display: none; }
+  @media (pointer: coarse) {
+    #dpad {
+      display: grid;
+      grid-template-areas: ". up ." "left down right";
+      grid-template-columns: 56px 56px 56px;
+      grid-template-rows: 56px 56px;
+      gap: 6px;
+      position: absolute; left: 14px; bottom: 14px;
+    }
+    .dpad-btn {
+      background: rgba(42,42,48,0.75); color: #eee; border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px; font-size: 22px; display: flex; align-items: center; justify-content: center;
+      touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    }
+    .dpad-btn:active { background: rgba(80,80,90,0.85); }
+    .dpad-up { grid-area: up; }
+    .dpad-down { grid-area: down; }
+    .dpad-left { grid-area: left; }
+    .dpad-right { grid-area: right; }
+
+    #toolbar {
+      gap: 6px; padding: 8px 10px;
+      flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    }
+    #toolbar h1 { display: none; }
+    #toolbar > * { flex: 0 0 auto; }
+    button, select, input[type="color"] { min-height: 40px; font-size: 14px; }
+    #intensityLabel input[type="range"] { min-width: 90px; }
+  }
 </style>
 </head>
 <body>
@@ -84,10 +127,17 @@
     <button id="asciiBtn">ASCII Mode</button>
     <div id="stats"></div>
   </div>
-  <div id="help">Move: W/S or &uarr;/&darr; &nbsp; Turn: A/D or &larr;/&rarr; &nbsp; Strafe: Q/E</div>
+  <div id="help" class="help-desktop">Move: W/S or &uarr;/&darr; &nbsp; Turn: A/D or &larr;/&rarr; &nbsp; Strafe: Q/E</div>
+  <div id="helpTouch" class="help-touch">Use the on-screen pad to move and turn</div>
   <div id="viewWrap">
     <canvas id="view" width="900" height="560"></canvas>
     <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="dpad">
+      <button class="dpad-btn dpad-up" data-key="w" aria-label="Forward">&#9650;</button>
+      <button class="dpad-btn dpad-left" data-key="a" aria-label="Turn left">&#9664;</button>
+      <button class="dpad-btn dpad-down" data-key="s" aria-label="Back">&#9660;</button>
+      <button class="dpad-btn dpad-right" data-key="d" aria-label="Turn right">&#9654;</button>
+    </div>
     <div id="winOverlay">
       <h2>You solved the maze!</h2>
       <p id="winStats"></p>
@@ -339,6 +389,7 @@ function psychedelicColor(hitX, hitY, dist, side) {
   return `hsl(${hue.toFixed(1)}, 90%, ${light.toFixed(1)}%)`;
 }
 
+const viewWrap = document.getElementById("viewWrap");
 const viewCanvas = document.getElementById("view");
 const viewCtx = viewCanvas.getContext("2d");
 const mmCanvas = document.getElementById("minimap");
@@ -570,6 +621,33 @@ function renderMinimap() {
 window.addEventListener("keydown", e => { keys[e.key.toLowerCase()] = true; });
 window.addEventListener("keyup", e => { keys[e.key.toLowerCase()] = false; });
 
+// touch D-pad drives the same keys{} flags the keyboard does, so update()/tryMove() need no
+// touch-specific branch at all
+document.querySelectorAll(".dpad-btn").forEach((btn) => {
+  const key = btn.dataset.key;
+  const press = (e) => { e.preventDefault(); keys[key] = true; };
+  const release = (e) => { e.preventDefault(); keys[key] = false; };
+  btn.addEventListener("pointerdown", press);
+  btn.addEventListener("pointerup", release);
+  btn.addEventListener("pointercancel", release);
+  btn.addEventListener("pointerleave", release);
+});
+
+// canvases fill whatever space #viewWrap actually has instead of a fixed 900x560 — on a
+// narrow/tall phone viewport that means a taller (not letterboxed) canvas, since forcing the
+// desktop 900:560 landscape ratio would waste most of the screen below it
+function resizeCanvases() {
+  const availW = viewWrap.clientWidth, availH = viewWrap.clientHeight;
+  viewCanvas.width = Math.max(200, Math.min(900, availW));
+  viewCanvas.height = Math.max(125, Math.min(560, availH));
+
+  const mmSize = Math.max(120, Math.min(220, Math.floor(Math.min(viewCanvas.width, viewCanvas.height) * 0.4)));
+  mmCanvas.width = mmSize;
+  mmCanvas.height = mmSize;
+}
+window.addEventListener("resize", resizeCanvases);
+window.addEventListener("orientationchange", () => setTimeout(resizeCanvases, 200));
+
 const markSettingsPending = () => document.getElementById("applyBtn").classList.add("pending");
 
 document.getElementById("applyBtn").addEventListener("click", newMaze);
@@ -609,6 +687,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+resizeCanvases();
 newMaze();
 requestAnimationFrame(loop);
 </script>
