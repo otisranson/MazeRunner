@@ -51,6 +51,17 @@
       <option value="26">Large (26x26)</option>
       <option value="36">Huge (36x36)</option>
     </select>
+    <select id="shapeSelect">
+      <option value="square" selected>Square</option>
+      <option value="circle">Circle</option>
+      <option value="triangle">Triangle</option>
+      <option value="pentagon">Pentagon</option>
+      <option value="hexagon">Hexagon</option>
+      <option value="heptagon">Heptagon</option>
+      <option value="octagon">Octagon</option>
+      <option value="nonagon">Nonagon</option>
+      <option value="decagon">Decagon</option>
+    </select>
     <button id="newMazeBtn">New Maze</button>
     <button id="solveBtn">Show Solution</button>
     <button id="resetBtn">Reset Position</button>
@@ -72,7 +83,69 @@
 
 // ---------- maze generation (recursive backtracker) ----------
 
-function generateCells(cols, rows) {
+// which cells fall inside the chosen shape, tested in a [-1,1]x[-1,1] box centered on the grid
+const POLY_SIDES = { triangle: 3, pentagon: 5, hexagon: 6, heptagon: 7, octagon: 8, nonagon: 9, decagon: 10 };
+
+function insideRegularPolygon(cx, cy, k) {
+  const apothem = Math.cos(Math.PI / k);
+  for (let i = 0; i < k; i++) {
+    const phi = -Math.PI / 2 + (i + 0.5) * (2 * Math.PI / k);
+    if (cx * Math.cos(phi) + cy * Math.sin(phi) > apothem + 1e-9) return false;
+  }
+  return true;
+}
+
+function computeShapeMask(shape, cols, rows) {
+  const mask = Array.from({ length: rows }, () => new Array(cols).fill(true));
+  if (shape === "square") return mask;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const cx = ((x + 0.5) / cols) * 2 - 1;
+      const cy = ((y + 0.5) / rows) * 2 - 1;
+      mask[y][x] = shape === "circle"
+        ? cx * cx + cy * cy <= 1
+        : insideRegularPolygon(cx, cy, POLY_SIDES[shape]);
+    }
+  }
+  return mask;
+}
+
+// trims the raw shape mask down to its single 4-connected blob, so discretization
+// can never leave a stray floating cell the generator/raycaster would render as an
+// unreachable sealed room
+function largestConnectedMask(rawMask, cols, rows) {
+  let seed = null;
+  const cx = Math.floor(cols / 2), cy = Math.floor(rows / 2);
+  if (rawMask[cy][cx]) {
+    seed = { x: cx, y: cy };
+  } else {
+    outer:
+    for (let r = 1; r < Math.max(cols, rows); r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const x = cx + dx, y = cy + dy;
+          if (x >= 0 && x < cols && y >= 0 && y < rows && rawMask[y][x]) { seed = { x, y }; break outer; }
+        }
+      }
+    }
+  }
+
+  const active = Array.from({ length: rows }, () => new Array(cols).fill(false));
+  const stack = [seed];
+  active[seed.y][seed.x] = true;
+  while (stack.length) {
+    const { x, y } = stack.pop();
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && rawMask[ny][nx] && !active[ny][nx]) {
+        active[ny][nx] = true;
+        stack.push({ x: nx, y: ny });
+      }
+    }
+  }
+  return { active, seed };
+}
+
+function generateCells(cols, rows, active, seed) {
   const cells = [];
   for (let y = 0; y < rows; y++) {
     const row = [];
@@ -82,7 +155,7 @@ function generateCells(cols, rows) {
     cells.push(row);
   }
 
-  const inBounds = (x, y) => x >= 0 && x < cols && y >= 0 && y < rows;
+  const inBounds = (x, y) => x >= 0 && x < cols && y >= 0 && y < rows && active[y][x];
   const neighborsOf = (x, y) => ([
     { dir: "N", opp: "S", x, y: y - 1 },
     { dir: "S", opp: "N", x, y: y + 1 },
@@ -90,8 +163,8 @@ function generateCells(cols, rows) {
     { dir: "W", opp: "E", x: x - 1, y },
   ]).filter(n => inBounds(n.x, n.y) && !cells[n.y][n.x].visited);
 
-  const stack = [{ x: 0, y: 0 }];
-  cells[0][0].visited = true;
+  const stack = [{ x: seed.x, y: seed.y }];
+  cells[seed.y][seed.x].visited = true;
   while (stack.length) {
     const { x, y } = stack[stack.length - 1];
     const options = neighborsOf(x, y);
@@ -105,12 +178,14 @@ function generateCells(cols, rows) {
   return cells;
 }
 
-// doubled-resolution wall grid so the raycaster can treat the maze like any tile map
-function buildTileGrid(cells, cols, rows) {
+// doubled-resolution wall grid so the raycaster can treat the maze like any tile map;
+// cells outside the active shape are left as solid walls, which is what carves the outline
+function buildTileGrid(cells, cols, rows, active) {
   const w = cols * 2 + 1, h = rows * 2 + 1;
   const grid = Array.from({ length: h }, () => new Array(w).fill(1));
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
+      if (!active[y][x]) continue;
       const c = cells[y][x];
       const tx = x * 2 + 1, ty = y * 2 + 1;
       grid[ty][tx] = 0;
@@ -121,8 +196,25 @@ function buildTileGrid(cells, cols, rows) {
   return { grid, w, h };
 }
 
-function solveCells(cells, cols, rows) {
-  const start = { x: 0, y: 0 }, goal = { x: cols - 1, y: rows - 1 };
+// entrance/exit picked as the two geometric extremes of the active shape (min/max x+y),
+// generalizing the square maze's original top-left-to-bottom-right corners to any shape.
+// (Deliberately not a graph-diameter search: recursive backtracker's DFS root very often
+// ends up a degree-1 dead end, which kept dragging a diameter-based endpoint back to the
+// generation seed — geometry avoids depending on that generation-order artifact.)
+function pickExtremeCells(active, cols, rows) {
+  let start = null, exit = null, startScore = Infinity, exitScore = -Infinity;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (!active[y][x]) continue;
+      const score = x + y;
+      if (score < startScore) { startScore = score; start = { x, y }; }
+      if (score > exitScore) { exitScore = score; exit = { x, y }; }
+    }
+  }
+  return { start, exit };
+}
+
+function solvePath(cells, cols, start, goal) {
   const key = (x, y) => y * cols + x;
   const prev = new Map();
   const seen = new Set([key(start.x, start.y)]);
@@ -154,6 +246,7 @@ function solveCells(cells, cols, rows) {
 // ---------- state ----------
 
 let cols, rows, cells, tileGrid, gridW, gridH, solutionPath;
+let activeMask, startCell, exitCell;
 let player = { x: 0, y: 0, angle: 0 };
 let showSolution = false;
 let mazeStartTime = 0, won = false;
@@ -168,9 +261,20 @@ const winStats = document.getElementById("winStats");
 
 function newMaze() {
   cols = rows = parseInt(document.getElementById("sizeSelect").value, 10);
-  cells = generateCells(cols, rows);
-  ({ grid: tileGrid, w: gridW, h: gridH } = buildTileGrid(cells, cols, rows));
-  solutionPath = solveCells(cells, cols, rows);
+  const shape = document.getElementById("shapeSelect").value;
+
+  const rawMask = computeShapeMask(shape, cols, rows);
+  const { active } = largestConnectedMask(rawMask, cols, rows);
+  activeMask = active;
+
+  const { start, exit } = pickExtremeCells(active, cols, rows);
+  startCell = start;
+  exitCell = exit;
+
+  cells = generateCells(cols, rows, active, start);
+  ({ grid: tileGrid, w: gridW, h: gridH } = buildTileGrid(cells, cols, rows, active));
+  solutionPath = solvePath(cells, cols, start, exit);
+
   showSolution = false;
   document.getElementById("solveBtn").classList.remove("active");
   resetPlayer();
@@ -180,9 +284,11 @@ function newMaze() {
 }
 
 function resetPlayer() {
-  player.x = 1.5;
-  player.y = 1.5;
-  player.angle = 0;
+  player.x = startCell.x * 2 + 1.5;
+  player.y = startCell.y * 2 + 1.5;
+  player.angle = solutionPath.length > 1
+    ? Math.atan2(solutionPath[1].y - solutionPath[0].y, solutionPath[1].x - solutionPath[0].x)
+    : 0;
 }
 
 // ---------- raycasting ----------
@@ -231,7 +337,7 @@ function update(dt) {
   }
 
   const cellX = Math.floor((player.x - 1) / 2), cellY = Math.floor((player.y - 1) / 2);
-  if (cellX === cols - 1 && cellY === rows - 1) {
+  if (cellX === exitCell.x && cellY === exitCell.y) {
     won = true;
     const secs = ((performance.now() - mazeStartTime) / 1000).toFixed(1);
     winStats.textContent = `Time: ${secs}s`;
@@ -313,9 +419,9 @@ function renderMinimap() {
   }
 
   mmCtx.fillStyle = "#4caf50";
-  mmCtx.fillRect(ox + 1 * scale, oy + 1 * scale, scale + 0.5, scale + 0.5);
+  mmCtx.fillRect(ox + (startCell.x * 2 + 1) * scale, oy + (startCell.y * 2 + 1) * scale, scale + 0.5, scale + 0.5);
   mmCtx.fillStyle = "#e33";
-  mmCtx.fillRect(ox + (2 * (cols - 1) + 1) * scale, oy + (2 * (rows - 1) + 1) * scale, scale + 0.5, scale + 0.5);
+  mmCtx.fillRect(ox + (exitCell.x * 2 + 1) * scale, oy + (exitCell.y * 2 + 1) * scale, scale + 0.5, scale + 0.5);
 
   mmCtx.save();
   mmCtx.translate(ox + player.x * scale, oy + player.y * scale);
@@ -339,6 +445,7 @@ document.getElementById("newMazeBtn").addEventListener("click", newMaze);
 document.getElementById("resetBtn").addEventListener("click", resetPlayer);
 document.getElementById("againBtn").addEventListener("click", newMaze);
 document.getElementById("sizeSelect").addEventListener("change", newMaze);
+document.getElementById("shapeSelect").addEventListener("change", newMaze);
 document.getElementById("solveBtn").addEventListener("click", (e) => {
   showSolution = !showSolution;
   e.target.classList.toggle("active", showSolution);
