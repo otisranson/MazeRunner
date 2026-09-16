@@ -72,6 +72,7 @@
     <button id="resetBtn">Reset Position</button>
     <input type="color" id="wallColorInput" value="#4a78c8" title="Wall color">
     <button id="psychedelicBtn">Psychedelic Mode</button>
+    <button id="asciiBtn">ASCII Mode</button>
     <div id="stats"></div>
   </div>
   <div id="help">Move: W/S or &uarr;/&darr; &nbsp; Turn: A/D or &larr;/&rarr; &nbsp; Strafe: Q/E</div>
@@ -259,7 +260,12 @@ let showSolution = false;
 let mazeStartTime = 0, won = false;
 let wallColor = hexToRgb("#4a78c8");
 let psychedelic = false;
+let asciiMode = false;
 let animTime = 0;
+
+// density ramp (sparsest to densest ink) used to render wall shading as characters
+const ASCII_RAMP = " .:-=+*#%@";
+const CHAR_W = 10, CHAR_H = 16;
 
 function hexToRgb(hex) {
   const v = parseInt(hex.slice(1), 16);
@@ -410,21 +416,49 @@ function render() {
   viewCtx.fillStyle = "#08090b";
   viewCtx.fillRect(0, h / 2, w, h / 2);
 
-  const numRays = w;
-  for (let i = 0; i < numRays; i++) {
-    const rayAngle = player.angle - FOV / 2 + (i / numRays) * FOV;
-    const { dist, side, hitX, hitY } = castRay(rayAngle);
-    const corrected = dist * Math.cos(rayAngle - player.angle);
-    const lineHeight = Math.min(h * 2, h / corrected);
-    const y0 = (h - lineHeight) / 2;
-
-    if (psychedelic) {
-      viewCtx.fillStyle = psychedelicColor(hitX, hitY, corrected, side);
-    } else {
+  if (asciiMode) {
+    viewCtx.font = `${CHAR_H - 2}px "Courier New", monospace`;
+    viewCtx.textBaseline = "top";
+    const charCols = Math.ceil(w / CHAR_W);
+    const maxRow = Math.floor(h / CHAR_H);
+    for (let col = 0; col < charCols; col++) {
+      const rayAngle = player.angle - FOV / 2 + ((col + 0.5) / charCols) * FOV;
+      const { dist, side, hitX, hitY } = castRay(rayAngle);
+      const corrected = dist * Math.cos(rayAngle - player.angle);
+      const lineHeight = Math.min(h * 2, h / corrected);
+      const y0 = (h - lineHeight) / 2;
       const shade = Math.max(0.15, 1 - corrected / 14) * (side === 1 ? 0.8 : 1);
-      viewCtx.fillStyle = `rgb(${wallColor.r * shade | 0},${wallColor.g * shade | 0},${wallColor.b * shade | 0})`;
+
+      viewCtx.fillStyle = psychedelic
+        ? psychedelicColor(hitX, hitY, corrected, side)
+        : `rgb(${wallColor.r * shade | 0},${wallColor.g * shade | 0},${wallColor.b * shade | 0})`;
+
+      const density = shade * (ASCII_RAMP.length - 1);
+      const rowStart = Math.max(0, Math.floor(y0 / CHAR_H));
+      const rowEnd = Math.min(maxRow, Math.ceil((y0 + lineHeight) / CHAR_H));
+      for (let row = rowStart; row < rowEnd; row++) {
+        const dither = (col + row) % 2 === 0 ? 0.25 : -0.25;
+        const idx = Math.max(0, Math.min(ASCII_RAMP.length - 1, Math.round(density + dither)));
+        viewCtx.fillText(ASCII_RAMP[idx], col * CHAR_W, row * CHAR_H);
+      }
     }
-    viewCtx.fillRect(i, y0, 1, lineHeight);
+  } else {
+    const numRays = w;
+    for (let i = 0; i < numRays; i++) {
+      const rayAngle = player.angle - FOV / 2 + (i / numRays) * FOV;
+      const { dist, side, hitX, hitY } = castRay(rayAngle);
+      const corrected = dist * Math.cos(rayAngle - player.angle);
+      const lineHeight = Math.min(h * 2, h / corrected);
+      const y0 = (h - lineHeight) / 2;
+
+      if (psychedelic) {
+        viewCtx.fillStyle = psychedelicColor(hitX, hitY, corrected, side);
+      } else {
+        const shade = Math.max(0.15, 1 - corrected / 14) * (side === 1 ? 0.8 : 1);
+        viewCtx.fillStyle = `rgb(${wallColor.r * shade | 0},${wallColor.g * shade | 0},${wallColor.b * shade | 0})`;
+      }
+      viewCtx.fillRect(i, y0, 1, lineHeight);
+    }
   }
 
   renderMinimap();
@@ -493,6 +527,10 @@ document.getElementById("psychedelicBtn").addEventListener("click", (e) => {
   psychedelic = !psychedelic;
   e.target.classList.toggle("active", psychedelic);
   document.getElementById("wallColorInput").disabled = psychedelic;
+});
+document.getElementById("asciiBtn").addEventListener("click", (e) => {
+  asciiMode = !asciiMode;
+  e.target.classList.toggle("active", asciiMode);
 });
 
 let lastTime = performance.now();
