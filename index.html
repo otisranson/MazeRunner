@@ -546,7 +546,9 @@ function render() {
       const rayAngle = player.angle - FOV / 2 + ((col + 0.5) / charCols) * FOV;
       const { dist, side, hitX, hitY } = castRay(rayAngle);
       const corrected = dist * Math.cos(rayAngle - player.angle);
-      const lineHeight = Math.min(h * 2, h / corrected);
+      // capped well under full canvas height (not 2x) so even nose-to-wall, a visible strip of
+      // sky/floor always stays framing the view instead of it flattening into a solid color block
+      const lineHeight = Math.min(h * 0.92, h / corrected);
       const y0 = (h - lineHeight) / 2;
       const shade = Math.max(0.15, 1 - corrected / 14) * (side === 1 ? 0.8 : 1);
 
@@ -569,7 +571,7 @@ function render() {
       const rayAngle = player.angle - FOV / 2 + (i / numRays) * FOV;
       const { dist, side, hitX, hitY } = castRay(rayAngle);
       const corrected = dist * Math.cos(rayAngle - player.angle);
-      const lineHeight = Math.min(h * 2, h / corrected);
+      const lineHeight = Math.min(h * 0.92, h / corrected);
       const y0 = (h - lineHeight) / 2;
 
       if (psychedelic) {
