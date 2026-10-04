@@ -50,12 +50,10 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
 ## How it works: the maze algorithms
 
 Everything below lives in the one `index.html` file — no libraries, just the raw algorithms.
-Each piece is tagged against the discipline it actually belongs to, in the spirit of (and using
-the same vocabulary as) my private [Organon](https://github.com/otisranson/Organon) index —
-the instrument built for mapping applied work back to its formal foundations rather than
-describing code as if it invented the math underneath it.
+Each piece is tagged against the discipline it actually belongs to, rather than describing code
+as if it invented the math underneath it.
 
-**Generation — recursive backtracker.** *Organon: Graph theory, Combinatorics.* The maze is
+**Generation — recursive backtracker.** *Discipline: Graph theory, Combinatorics.* The maze is
 carved out of a grid of cells that all start fully walled in. Starting from a seed cell, the
 algorithm maintains a stack: at each step it looks at the current cell's unvisited neighbors,
 and if any exist, picks one at random, knocks down the wall between them, marks it visited, and
@@ -66,7 +64,7 @@ open walls and no cycles. That spanning-tree property is what guarantees a "perf
 there's exactly one path between any two cells, and dead ends are maximized (every leaf of the
 tree is a dead end).
 
-**Shape carving — regular polygon as an intersection of half-planes.** *Organon: Computational
+**Shape carving — regular polygon as an intersection of half-planes.** *Discipline: Computational
 geometry.* Non-square shapes (circle, triangle, pentagon…decagon) work by testing which grid
 cells fall inside a regular k-gon inscribed in the grid, before generation ever runs. Each
 cell's center is normalized to `(cx, cy)` in `[-1, 1]²`. A regular k-sided polygon with
@@ -84,7 +82,7 @@ cx·cos(φᵢ) + cy·sin(φᵢ) ≤ a   for all i = 0..k-1
 get flood-filled from the grid center to keep only the single connected blob — this is what
 stops the polygon's corners from discretizing into stray, unreachable 1-cell islands.
 
-**Difficulty — Intensity as a braid-probability curve.** *Organon: Probability theory.* A
+**Difficulty — Intensity as a braid-probability curve.** *Discipline: Probability theory.* A
 perfect maze (no cycles) is also the *hardest possible* maze for a given size, since every wrong
 turn is a dead end with no shortcut back. The Intensity slider controls **braiding**: after
 generation, every dead-end cell (degree 1 in the spanning tree) gets an independent Bernoulli
@@ -101,7 +99,7 @@ At intensity 10, `braidChance = 0` — no braiding, the untouched perfect maze. 
 more forgiving. The stats bar's live dead-end count is literally just counting degree-1 cells
 after braiding, so it tracks this directly.
 
-**Entrance & exit — geometric extremes, not graph diameter.** *Organon: Graph theory.* The
+**Entrance & exit — geometric extremes, not graph diameter.** *Discipline: Graph theory.* The
 obvious "hardest start/exit" choice is the two endpoints of the spanning tree's longest path
 (its graph diameter, found via a double-BFS). That was tried and dropped: a recursive
 backtracker's DFS root is very often left at degree 1 (a documented property of the algorithm,
@@ -112,13 +110,13 @@ maximizing `x + y` — i.e. the opposite corners of the shape's bounding box. Fo
 reproduces the classic top-left-to-bottom-right corners; for every other shape it gives a
 boundary-to-boundary traversal with no dependency on generation-order artifacts.
 
-**Solver — plain BFS.** *Organon: Graph theory, Algorithms.* Shortest path from start to exit is
+**Solver — plain BFS.** *Discipline: Graph theory, Algorithms.* Shortest path from start to exit is
 an unweighted-graph breadth-first search over the post-braiding maze graph, which may now
 contain cycles — BFS still finds the shortest route in edge count regardless. This same path
 backs both "Show Solution" and the player's initial facing direction (aimed at the first
 solution step).
 
-**First-person rendering — DDA raycasting with fisheye correction.** *Organon: Computational
+**First-person rendering — DDA raycasting with fisheye correction.** *Discipline: Computational
 geometry.* The 3D view is a classic Wolfenstein-style raycaster: for each screen column, a ray
 is cast from the player across a 60° field of view using **Digital Differential Analysis** —
 stepping the ray one grid line at a time along whichever axis (x or y) reaches its next
@@ -130,7 +128,7 @@ length — `corrected = dist · cos(rayAngle − player.angle)` — and project 
 `canvas height / corrected`, so walls directly ahead and walls at the edge of the FOV at the
 same true distance render at the same height.
 
-**Psychedelic Mode — a flowing hue field.** *Not really an Organon entry* — this one's just
+**Psychedelic Mode — a flowing hue field.** *No formal discipline tag here* — this one's just
 applied trigonometry with no deeper theoretical foundation to cite, which is worth saying
 plainly rather than dressing it up. Wall color becomes `hsl(hue, 90%, light)` where `hue` is
 driven by four overlapping sine waves sampled at the wall's actual hit coordinates (not just its
