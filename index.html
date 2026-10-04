@@ -557,8 +557,7 @@ function render() {
 // traditional maze-book-style top-down view: the whole maze is drawn at once, scaled to fill
 // the canvas, with the player as a small directional marker moving across a static page (no
 // scrolling, no fog of war — the point is seeing the whole puzzle, like a printed maze). Walls
-// are solid filled cells; start/exit/solution/player stay as plain text markers on top.
-const TOPDOWN_DIR_GLYPHS = [">", "\\", "v", "/", "<", "\\", "^", "/"];
+// are solid filled cells; start/exit/solution stay as plain text markers on top.
 
 function renderTopDown() {
   const w = viewCanvas.width, h = viewCanvas.height;
@@ -598,11 +597,21 @@ function renderTopDown() {
     }
   }
 
-  const norm = ((player.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-  const dirIdx = Math.round(norm / (Math.PI / 4)) % 8;
-  viewCtx.font = `bold ${Math.max(fontSize, charH)}px "Courier New", monospace`;
+  // a single vector arrow rotated to the player's exact heading (same shape/color as the
+  // minimap's player marker), instead of swapping between a handful of fixed characters —
+  // rotates smoothly rather than snapping to 8 directions
+  const arrowLen = Math.max(charW, charH) * 1.3;
+  viewCtx.save();
+  viewCtx.translate(player.x * charW, player.y * charH);
+  viewCtx.rotate(player.angle);
   viewCtx.fillStyle = "#7cf";
-  viewCtx.fillText(TOPDOWN_DIR_GLYPHS[dirIdx], player.x * charW, player.y * charH);
+  viewCtx.beginPath();
+  viewCtx.moveTo(arrowLen * 0.6, 0);
+  viewCtx.lineTo(-arrowLen * 0.4, arrowLen * 0.4);
+  viewCtx.lineTo(-arrowLen * 0.4, -arrowLen * 0.4);
+  viewCtx.closePath();
+  viewCtx.fill();
+  viewCtx.restore();
 }
 
 function renderMinimap() {
