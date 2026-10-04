@@ -557,7 +557,7 @@ function render() {
 // traditional maze-book-style top-down view: the whole maze is drawn at once, scaled to fill
 // the canvas, with the player as a small directional marker moving across a static page (no
 // scrolling, no fog of war — the point is seeing the whole puzzle, like a printed maze). Walls
-// are solid filled cells; start/exit/solution stay as plain text markers on top.
+// are solid filled cells; start/exit are vector circles and the solution path is a text overlay.
 
 function renderTopDown() {
   const w = viewCanvas.width, h = viewCanvas.height;
@@ -579,15 +579,23 @@ function renderTopDown() {
     }
   }
 
+  // start/exit as filled vector circles (same shape/approach as the minimap's markers),
+  // instead of text glyphs, so both views draw every marker the same way
+  const markerR = Math.max(1.5, Math.min(charW, charH) * 0.4);
+  viewCtx.fillStyle = "#4caf50";
+  viewCtx.beginPath();
+  viewCtx.arc((startTileX + 0.5) * charW, (startTileY + 0.5) * charH, markerR, 0, Math.PI * 2);
+  viewCtx.fill();
+  if (exitTileX < gridW && exitTileY < gridH) {
+    viewCtx.fillStyle = "#e33";
+    viewCtx.beginPath();
+    viewCtx.arc((exitTileX + 0.5) * charW, (exitTileY + 0.5) * charH, markerR, 0, Math.PI * 2);
+    viewCtx.fill();
+  }
+
   viewCtx.font = `${fontSize}px "Courier New", monospace`;
   viewCtx.textAlign = "center";
   viewCtx.textBaseline = "middle";
-  if (exitTileX < gridW && exitTileY < gridH) {
-    viewCtx.fillStyle = "#e33";
-    viewCtx.fillText("X", (exitTileX + 0.5) * charW, (exitTileY + 0.5) * charH);
-  }
-  viewCtx.fillStyle = "#4caf50";
-  viewCtx.fillText("S", (startTileX + 0.5) * charW, (startTileY + 0.5) * charH);
   if (solutionTiles) {
     viewCtx.fillStyle = "#e6c94d";
     for (const key of solutionTiles) {
@@ -637,10 +645,15 @@ function renderMinimap() {
     }
   }
 
+  const markerR = Math.max(1.5, scale * 0.6);
   mmCtx.fillStyle = "#4caf50";
-  mmCtx.fillRect(ox + (startCell.x * 2 + 1) * scale, oy + (startCell.y * 2 + 1) * scale, scale + 0.5, scale + 0.5);
+  mmCtx.beginPath();
+  mmCtx.arc(ox + (startCell.x * 2 + 1.5) * scale, oy + (startCell.y * 2 + 1.5) * scale, markerR, 0, Math.PI * 2);
+  mmCtx.fill();
   mmCtx.fillStyle = "#e33";
-  mmCtx.fillRect(ox + (exitCell.x * 2 + 1) * scale, oy + (exitCell.y * 2 + 1) * scale, scale + 0.5, scale + 0.5);
+  mmCtx.beginPath();
+  mmCtx.arc(ox + (exitCell.x * 2 + 1.5) * scale, oy + (exitCell.y * 2 + 1.5) * scale, markerR, 0, Math.PI * 2);
+  mmCtx.fill();
 
   mmCtx.save();
   mmCtx.translate(ox + player.x * scale, oy + player.y * scale);
