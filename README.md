@@ -26,12 +26,9 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
 - **Wall color**: pick any color for the walls, or toggle **Psychedelic Mode** for animated,
   flowing rainbow walls (overlapping sine waves in the wall's hit coordinates + time, so the
   color moves like fluid across the surface rather than just flashing)
-- **ASCII Mode**: renders the walls as shaded ASCII characters (`@%#*+=-:. `) instead of solid
-  color, density-mapped to distance like real ASCII art — combines with wall color/Psychedelic
-  Mode too, since it's just the same per-column shading rendered as text instead of a fill
 - **Top-Down Mode**: ditches the 3D view entirely for a traditional maze-book-style overhead
-  ASCII page — the whole maze drawn at once, filling the screen (`#` walls, `S`/`X` for
-  start/exit), with your position shown as a small `>`/`v`/`<`/`^`-style marker that points
+  page — the whole maze drawn at once as solid walls, filling the screen (`S`/`X` text markers
+  for start/exit), with your position shown as a small `>`/`v`/`<`/`^`-style marker that points
   whichever way you're facing and moves across the static page. Same WASD/touch controls, just
   a different way to see the maze; combine with Show Solution to trace the path on the page
 - **First-person view**: a Wolfenstein-style DDA raycaster rendered on `<canvas>`
