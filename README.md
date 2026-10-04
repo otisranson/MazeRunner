@@ -29,6 +29,12 @@ Or open `index.html` in a browser directly — no build step, no server, no npm.
 - **ASCII Mode**: renders the walls as shaded ASCII characters (`@%#*+=-:. `) instead of solid
   color, density-mapped to distance like real ASCII art — combines with wall color/Psychedelic
   Mode too, since it's just the same per-column shading rendered as text instead of a fill
+- **Top-Down Mode**: swaps the whole view for a classic roguelike-style top-down ASCII render
+  (`#` walls, `S`/`X` for start/exit, your position shown as a `>`/`v`/`<`/`^`-style glyph that
+  points whichever way you're facing) instead of the first-person raycast. The same WASD/touch
+  controls still drive it — only the rendering changes. Visibility is capped to a short "lantern
+  radius" around you that fades with distance, so it's still real exploration rather than seeing
+  the whole maze solved from above; combine with Show Solution to reveal the path as you walk it
 - **First-person view**: a Wolfenstein-style DDA raycaster rendered on `<canvas>`
   - Move: `W`/`S` or `↑`/`↓`
   - Turn: `A`/`D` or `←`/`→`

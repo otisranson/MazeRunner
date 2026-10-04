@@ -33,7 +33,7 @@
     width: 38px; height: 30px; padding: 2px; background: #2a2a30;
     border: 1px solid #444; border-radius: 4px; cursor: pointer;
   }
-  input[type="color"]:disabled { opacity: 0.4; cursor: not-allowed; }
+  input[type="color"]:disabled, button:disabled { opacity: 0.4; cursor: not-allowed; }
   #stats { margin-left: auto; font-size: 12px; color: #999; }
   #intensityLabel { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; }
   #intensityLabel input[type="range"] { accent-color: #3a6; cursor: pointer; }
@@ -125,6 +125,7 @@
     <input type="color" id="wallColorInput" value="#4a78c8" title="Wall color">
     <button id="psychedelicBtn">Psychedelic Mode</button>
     <button id="asciiBtn">ASCII Mode</button>
+    <button id="topdownBtn">Top-Down Mode</button>
     <div id="stats"></div>
   </div>
   <div id="help" class="help-desktop">Move: W/S or &uarr;/&darr; &nbsp; Turn: A/D or &larr;/&rarr; &nbsp; Strafe: Q/E</div>
@@ -365,11 +366,16 @@ const INTENSITY_LABELS = { 1: "Open", 2: "Easy", 3: "Easy", 4: "Moderate", 5: "M
 let wallColor = hexToRgb("#4a78c8");
 let psychedelic = false;
 let asciiMode = false;
+let topDownMode = false;
 let animTime = 0;
 
 // density ramp (sparsest to densest ink) used to render wall shading as characters
 const ASCII_RAMP = " .:-=+*#%@";
 const CHAR_W = 10, CHAR_H = 16;
+// top-down mode's "lantern radius" in grid-tile units (~half that many maze cells) — kept
+// tight so the roguelike view still demands real exploration instead of just showing the
+// whole solved maze from above
+const TOPDOWN_VISION_RADIUS = 9;
 
 function hexToRgb(hex) {
   const v = parseInt(hex.slice(1), 16);
@@ -521,6 +527,16 @@ function castRay(angle) {
 
 function render() {
   const w = viewCanvas.width, h = viewCanvas.height;
+
+  if (topDownMode) {
+    viewCtx.fillStyle = "#08090b";
+    viewCtx.fillRect(0, 0, w, h);
+    renderTopDown();
+    renderMinimap();
+    statsEl.textContent = `${cols}x${rows} maze · ${deadEndCount} dead ends`;
+    return;
+  }
+
   viewCtx.fillStyle = "#1c1e24";
   viewCtx.fillRect(0, 0, w, h / 2);
   viewCtx.fillStyle = "#08090b";
@@ -573,6 +589,68 @@ function render() {
 
   renderMinimap();
   statsEl.textContent = `${cols}x${rows} maze · ${deadEndCount} dead ends`;
+}
+
+// classic roguelike-style top-down ASCII view: world scrolls smoothly in character-cell
+// units under a fixed, screen-centered player glyph, with a hard vision radius so this mode
+// still requires exploring the maze rather than just seeing the whole thing solved from above
+const TOPDOWN_DIR_GLYPHS = [">", "\\", "v", "/", "<", "\\", "^", "/"];
+
+function renderTopDown() {
+  const w = viewCanvas.width, h = viewCanvas.height;
+  viewCtx.font = `${CHAR_H - 2}px "Courier New", monospace`;
+  viewCtx.textAlign = "center";
+  viewCtx.textBaseline = "middle";
+
+  const camX = player.x, camY = player.y;
+  const cx = w / 2, cy = h / 2;
+  const radius = Math.ceil(TOPDOWN_VISION_RADIUS);
+  const startTX = Math.floor(camX - radius), endTX = Math.ceil(camX + radius);
+  const startTY = Math.floor(camY - radius), endTY = Math.ceil(camY + radius);
+
+  const startTileX = startCell.x * 2 + 1, startTileY = startCell.y * 2 + 1;
+  const exitTileX = exitCell.x * 2 + 1, exitTileY = exitCell.y * 2 + 1;
+  const solutionTiles = showSolution
+    ? new Set(solutionPath.map(c => (c.x * 2 + 1) + "," + (c.y * 2 + 1)))
+    : null;
+
+  for (let ty = startTY; ty <= endTY; ty++) {
+    for (let tx = startTX; tx <= endTX; tx++) {
+      // weight the y term by CHAR_H/CHAR_W so the vision radius reads as a circle on screen
+      // instead of an oval, since character cells are taller than they are wide
+      const dist = Math.hypot(tx - camX, (ty - camY) * (CHAR_H / CHAR_W));
+      if (dist > TOPDOWN_VISION_RADIUS) continue;
+
+      const px = (tx + 0.5 - camX) * CHAR_W + cx;
+      const py = (ty + 0.5 - camY) * CHAR_H + cy;
+      if (px < -CHAR_W || px > w + CHAR_W || py < -CHAR_H || py > h + CHAR_H) continue;
+
+      let ch, color;
+      if (isWall(tx, ty)) {
+        ch = "#";
+        color = psychedelic ? psychedelicColor(tx, ty, 0, 0) : `rgb(${wallColor.r},${wallColor.g},${wallColor.b})`;
+      } else if (tx === exitTileX && ty === exitTileY) {
+        ch = "X"; color = "#e33";
+      } else if (tx === startTileX && ty === startTileY) {
+        ch = "S"; color = "#4caf50";
+      } else if (solutionTiles && solutionTiles.has(tx + "," + ty)) {
+        ch = ":"; color = "#e6c94d";
+      } else {
+        ch = "."; color = "#3a3a42";
+      }
+
+      viewCtx.globalAlpha = Math.max(0.25, 1 - dist / TOPDOWN_VISION_RADIUS);
+      viewCtx.fillStyle = color;
+      viewCtx.fillText(ch, px, py);
+    }
+  }
+  viewCtx.globalAlpha = 1;
+
+  const norm = ((player.angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const dirIdx = Math.round(norm / (Math.PI / 4)) % 8;
+  viewCtx.font = `bold ${CHAR_H}px "Courier New", monospace`;
+  viewCtx.fillStyle = "#7cf";
+  viewCtx.fillText(TOPDOWN_DIR_GLYPHS[dirIdx], cx, cy);
 }
 
 function renderMinimap() {
@@ -671,6 +749,11 @@ document.getElementById("psychedelicBtn").addEventListener("click", (e) => {
 document.getElementById("asciiBtn").addEventListener("click", (e) => {
   asciiMode = !asciiMode;
   e.target.classList.toggle("active", asciiMode);
+});
+document.getElementById("topdownBtn").addEventListener("click", (e) => {
+  topDownMode = !topDownMode;
+  e.target.classList.toggle("active", topDownMode);
+  document.getElementById("asciiBtn").disabled = topDownMode;
 });
 document.getElementById("intensityInput").addEventListener("input", (e) => {
   document.getElementById("intensityValue").textContent = `${e.target.value} · ${INTENSITY_LABELS[e.target.value]}`;
